@@ -33,6 +33,17 @@
 | 동적 웹페이지 조작 | Playwright MCP | Microsoft 공식 | 브라우저 열기, 이동, 클릭, 입력, 접근성 트리 읽기, 네트워크 요청 확인 | `npx @playwright/mcp@latest` | `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type` | 자체 API Key 없음. 접속 사이트의 계정은 별도 |
 | 범용 웹 데이터 수집 | Apify MCP | Apify 공식 | Apify Store의 수천 개 Actor를 검색·실행하여 지도, 쇼핑몰, SNS, 검색결과 등 수집 | 원격 `https://mcp.apify.com` 또는 `npx @apify/actors-mcp-server` | `search-actors`, `fetch-actor-details`, `call-actor`, `apify--rag-web-browser` | OAuth 또는 APIFY_TOKEN, Actor별 과금 가능 |
 | 웹·뉴스·이미지 검색 | Brave Search MCP | Brave 공식 | 웹, 뉴스, 이미지, 비디오, 지역 검색 | `BRAVE_API_KEY`를 설정하고 `npx -y @brave/brave-search-mcp-server --transport stdio` | `brave_web_search`, `brave_news_search`, `brave_image_search`, `brave_video_search` | Brave Search API Key 필요 |
+| 논문 검색 | arXiv MCP | 커뮤니티(blazickjp) | 논문 검색·다운로드·본문 읽기·인용 그래프 | `uvx arxiv-mcp-server` | `search_papers`, `get_abstract`, `read_paper` | 키 없음 ✅검증 |
+| 유튜브 자막 | YouTube Transcript MCP | 커뮤니티(jkawamoto) | 영상 자막 조회 (YouTube API 키 불필요) | `uvx --with "mcp<2" mcp-youtube-transcript` | `get_transcript` | 키 없음 ✅검증(핀 필요) |
+| 웹 검색 (무키) | DuckDuckGo MCP | 커뮤니티(nickclyde) | 키 없는 웹 검색·페이지 본문 가져오기 | `uvx duckduckgo-mcp-server` | `search`, `fetch_content` | 키 없음 ✅검증 |
+| 백과 검색 | Wikipedia MCP | 커뮤니티(Rudra-ravi) | 문서 검색·요약·섹션 추출 (`--language ko` 지원) | `uvx wikipedia-mcp` | `search_wikipedia`, `get_summary`, `get_article` | 키 없음 ✅검증 |
+| GitHub 저장소 Q&A | DeepWiki MCP | Cognition(Devin) 공식 | 공개 repo 구조·내용에 자연어 질문 | 원격 `https://mcp.deepwiki.com/mcp` | `ask_question`, `read_wiki_structure` | 키 없음 (무인증 원격) |
+| 최신 라이브러리 문서 | Context7 | Upstash 공식 | 버전별 최신 문서·코드 예시 주입 | 원격 `https://mcp.context7.com/mcp` 또는 `npx -y @upstash/context7-mcp` | `resolve-library-id`, `get-library-docs` | 키 없이 가능 (429 시 무료 키) |
+| 사고 구조화 | Sequential Thinking | MCP 공식 reference | 단계적 사고·계획 도구 | `npx -y @modelcontextprotocol/server-sequential-thinking` | `sequentialthinking` | 키 없음 |
+
+> **✅검증 표시**: 2026-08에 본 교재 작성 환경에서 `uvx` 실행 → MCP 연결 → Tool 목록 조회까지
+> 확인한 서버다. YouTube Transcript는 최신 `mcp` SDK와 어긋나므로 반드시 `--with "mcp<2"` 핀을
+> 붙인다. DeepWiki·Context7 원격 서버는 교재 작성 환경의 프록시 제한으로 직접 검증하지 못했다.
 
 
 ## 3. 제외한 서버
@@ -46,7 +57,7 @@
 | Brave Search MCP | `BRAVE_API_KEY` 필요 |
 
 이 서버들이 기능적으로 나쁘다는 의미가 아니다. 이번 실습의 제약조건을 “MCP 서버 인증키 없음”으로
-설정했기 때문에 제외한 것이다.
+설정했기 때문에 제외한 것이다. **키 없는 웹 검색이 필요하면 DuckDuckGo MCP(§2 표)를 사용한다.**
 
 ## 4. 실습 방식 — MCP별 Python 파일을 만들지 않는다
 
@@ -106,13 +117,16 @@ npx는 설치보다 **설치 후 PATH·커널 문제**로 막히는 경우가 �
 2. **(가벼움) `uvx` 파이썬 공개 서버.** `Fetch`·`Time`처럼 `uvx mcp-server-*`로 실행하면 npx가
    필요 없다. 다만 공개 reference 서버는 설치되는 `mcp` SDK 버전과 어긋나 `ImportError`가 날 수 있다
    (아래 주의 참고).
-3. **(키 필요) 원격 호스팅 MCP.** 예: Tavily `https://mcp.tavily.com/mcp`처럼 URL만 연결하면 로컬
-   프로세스·npx가 아예 없다. 대신 API Key가 필요하다.
+3. **(가장 간단) 원격 호스팅 MCP.** URL만 연결하면 로컬 프로세스·npx가 아예 없다. **키조차 필요
+   없는 무인증 서버도 있다** — 예: DeepWiki `https://mcp.deepwiki.com/mcp` (GitHub 공개 repo에
+   자연어 질문). Tavily `https://mcp.tavily.com/mcp`처럼 API Key가 필요한 원격 서버도 연결 방식은
+   같다.
 
 > **주의 — 공개 reference 서버의 버전 취약성**: `uvx mcp-server-fetch`류가
 > `ImportError: cannot import name 'McpError' ...`처럼 실패하면 이는 Node 문제가 아니라 서버 코드와
 > 설치된 `mcp` 버전이 어긋난 것이다. 서버/`mcp` 버전을 핀하거나, 위 1번(자작 FastMCP 서버)으로
 > 대체하는 편이 수업에서 가장 확실하다.
+> 핀으로 해결한 실제 예: `uvx --with "mcp<2" mcp-youtube-transcript` (2026-08 검증).
 
 **(선택) Node.js 확장을 하려면 — 3줄 가이드**
 
@@ -187,6 +201,8 @@ async def inspect_server(server_name: str) -> list[Any]:
 ## 7. 셀 4~10 — MCP 서버를 한 셀씩 추가 (모두 인증키 불필요)
 
 > **[필수]** Fetch·Time은 `uvx`로 실행되어 **Node.js가 필요 없다.** 이 둘만으로도 실습을 완주할 수 있다.
+> **[권장 · uvx/원격]** arXiv·YouTube 자막·DuckDuckGo·Wikipedia·DeepWiki도 Node 없이 동작한다
+> (uvx 4종은 2026-08 연결 검증).
 > **[선택 · Node 필요]** 나머지는 `npx`로 실행되므로 Node.js 18+가 있어야 한다. 없으면 건너뛴다.
 > **막히면**: 공개 서버가 `ImportError`(버전 취약성)로 실패해도, 본교재의 자작 FastMCP 서버로 대체하면
 > 학습 목표(에이전트가 MCP 툴을 스스로 선택)는 동일하게 달성된다. (§5 "npx 없이 하는 3가지 방법")
@@ -203,6 +219,69 @@ fetch_tools = await inspect_server("fetch")
 ```python
 connections["time"] = uvx_server("mcp-server-time")
 time_tools = await inspect_server("time")
+```
+
+### [권장 · uvx] arXiv MCP — 논문 검색
+
+논문 검색·초록·본문 읽기 Tool을 제공한다. arXiv API 자체가 무인증이라 키가 없다.
+
+```python
+connections["arxiv"] = uvx_server("arxiv-mcp-server")
+arxiv_tools = await inspect_server("arxiv")
+```
+
+### [권장 · uvx] YouTube Transcript MCP — 영상 자막
+
+공개 자막만 가져오므로 YouTube API 키가 필요 없다. 최신 `mcp` SDK와 어긋나므로
+**`mcp<2` 핀이 필수**다(§5 주의 참고).
+
+```python
+connections["youtube"] = uvx_server("--with", "mcp<2", "mcp-youtube-transcript")
+youtube_tools = await inspect_server("youtube")
+```
+
+### [권장 · uvx] DuckDuckGo MCP — 키 없는 웹 검색
+
+Tavily·Brave처럼 키가 필요한 검색 대신 쓸 수 있는 무료 검색이다. HTML 기반이라
+과도한 호출 시 차단될 수 있다(수업 데모 수준은 무방).
+
+```python
+connections["ddg"] = uvx_server("duckduckgo-mcp-server")
+ddg_tools = await inspect_server("ddg")
+```
+
+### [권장 · uvx] Wikipedia MCP — 백과 검색
+
+한국어 위키 기준으로 쓰려면 `--language ko`를 준다.
+
+```python
+connections["wikipedia"] = uvx_server("wikipedia-mcp", "--language", "ko")
+wikipedia_tools = await inspect_server("wikipedia")
+```
+
+### [권장 · 원격] DeepWiki MCP — GitHub 공개 repo Q&A (무인증)
+
+로컬 프로세스가 아예 없다. URL만 연결하면 되고 키도 필요 없다. 공개 repo만 질문할 수 있다.
+
+```python
+connections["deepwiki"] = {
+    "transport": "streamable_http",
+    "url": "https://mcp.deepwiki.com/mcp",
+}
+deepwiki_tools = await inspect_server("deepwiki")
+```
+
+### [선택 · 원격] Context7 — 최신 라이브러리 문서
+
+키 없이 사용 가능하며, 429(사용량 초과)가 나면 무료 키를 받아 붙인다. 7주 2일차
+바이브 코딩에서 최신 문서를 참조할 때 특히 유용하다.
+
+```python
+connections["context7"] = {
+    "transport": "streamable_http",
+    "url": "https://mcp.context7.com/mcp",
+}
+context7_tools = await inspect_server("context7")
 ```
 
 ---
@@ -256,6 +335,16 @@ connections["playwright"] = npx_server(
 playwright_tools = await inspect_server("playwright")
 ```
 
+### [선택 · Node] Sequential Thinking MCP (npx)
+
+MCP 공식 reference 서버. 외부 API가 아니라 **모델의 단계적 사고를 돕는 도구**로,
+"Tool이 꼭 외부 시스템일 필요는 없다"는 것을 보여주는 예다.
+
+```python
+connections["seq"] = npx_server("-y", "@modelcontextprotocol/server-sequential-thinking")
+seq_tools = await inspect_server("seq")
+```
+
 ## 8. 셀 11~13 — 전체 Tool 수집과 모델 바인딩
 
 Tool 수가 많으면 선택 정확도가 낮아질 수 있으므로 처음에는 **Node 없이 되는 Fetch·Time만**
@@ -265,9 +354,12 @@ Tool 수가 많으면 선택 정확도가 낮아질 수 있으므로 처음에�
 # 최소 경로: Node.js 없이 uvx만으로 동작
 ACTIVE_SERVER_NAMES = {"fetch", "time"}
 
-# Node.js를 설치했다면 아래처럼 확장한다
+# uvx 권장 서버까지 확장 (Node.js 불필요)
+# ACTIVE_SERVER_NAMES = {"fetch", "time", "arxiv", "youtube", "ddg", "wikipedia"}
+
+# Node.js까지 설치했다면 전체 확장
 # ACTIVE_SERVER_NAMES = {
-#     "fetch", "time",
+#     "fetch", "time", "arxiv", "youtube", "ddg", "wikipedia", "deepwiki",
 #     "weather", "finance", "filesystem", "memory", "playwright",
 # }
 
@@ -335,6 +427,11 @@ SYSTEM_PROMPT = """
 - 주가·가격 이력은 Yahoo Finance MCP
 - URL 본문은 Fetch MCP
 - 현재 시각·시간대 변환은 Time MCP
+- 논문 검색·요약은 arXiv MCP
+- 유튜브 영상 자막은 YouTube Transcript MCP
+- 일반 웹 검색은 DuckDuckGo MCP
+- 백과 지식·정의는 Wikipedia MCP
+- GitHub 공개 저장소 질문은 DeepWiki MCP
 - 로컬 파일은 Filesystem MCP
 - 명시적인 사실 저장·검색은 Memory MCP
 - 동적 브라우저 화면은 Playwright MCP
@@ -428,6 +525,34 @@ await run_agent(
 await run_agent("현재 서울 시각과 같은 순간의 런던 시각을 함께 표시해줘.")
 ```
 
+### arXiv MCP
+
+```python
+await run_agent(
+    "retrieval augmented generation 관련 최신 논문 2편을 arXiv에서 찾아 제목과 핵심을 요약해줘."
+)
+```
+
+### YouTube Transcript MCP
+
+```python
+await run_agent(
+    "https://www.youtube.com/watch?v=영상ID 영상의 자막을 가져와 핵심을 3줄로 정리해줘."
+)
+```
+
+### DuckDuckGo MCP
+
+```python
+await run_agent("Model Context Protocol의 최근 동향을 웹에서 검색해 요약해줘.")
+```
+
+### Wikipedia MCP
+
+```python
+await run_agent("위키백과에서 '전이 학습'을 찾아 두 문장으로 정의해줘.")
+```
+
 ### Filesystem MCP
 
 ```python
@@ -478,6 +603,10 @@ agent → weather_* Tool → agent → time_* Tool → agent → 최종 답변
 | AAPL 3개월 주가 | Yahoo Finance | | | |
 | URL 본문 요약 | Fetch | | | |
 | 서울·런던 시각 | Time | | | |
+| 최신 논문 2편 | arXiv | | | |
+| 영상 자막 요약 | YouTube Transcript | | | |
+| 키 없는 웹 검색 | DuckDuckGo | | | |
+| 백과 정의 | Wikipedia | | | |
 | 로컬 파일 요약 | Filesystem | | | |
 | 프로젝트 목표 기억 | Memory | | | |
 | 동적 페이지 확인 | Playwright | | | |
@@ -496,6 +625,12 @@ agent → weather_* Tool → agent → time_* Tool → agent → 최종 답변
 
 - `uv --version`, `uvx --version`을 확인한다.
 - Jupyter를 VS Code에서 다시 시작하여 PATH를 갱신한다.
+
+### 공개 서버가 `ImportError`로 죽음
+
+- 서버 패키지와 설치된 `mcp` SDK 버전이 어긋난 것이다(§5 주의).
+- `uvx --with "mcp<2" mcp-youtube-transcript`처럼 구버전 SDK를 함께 핀하면 해결되는 경우가 많다.
+- 해결되지 않으면 그 서버만 빼고 진행한다 — 다른 서버 실습에는 지장 없다.
 
 ### (선택) Ollama 연결 실패
 
@@ -552,6 +687,13 @@ ToolNode로 분리하고 LangGraph interrupt를 사용해 사람 승인을 받�
 - Filesystem MCP: https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
 - Memory MCP: https://github.com/modelcontextprotocol/servers/tree/main/src/memory
 - Playwright MCP: https://github.com/microsoft/playwright-mcp
+- arXiv MCP: https://github.com/blazickjp/arxiv-mcp-server
+- YouTube Transcript MCP: https://github.com/jkawamoto/mcp-youtube-transcript
+- DuckDuckGo MCP: https://github.com/nickclyde/duckduckgo-mcp-server
+- Wikipedia MCP: https://github.com/Rudra-ravi/wikipedia-mcp
+- DeepWiki MCP: https://docs.devin.ai/work-with-devin/deepwiki-mcp
+- Context7: https://github.com/upstash/context7
+- Sequential Thinking MCP: https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking
 - LangChain MCP 문서: https://docs.langchain.com/oss/python/langchain/mcp
 - LangChain Ollama 문서: https://docs.langchain.com/oss/python/integrations/chat/ollama
 
