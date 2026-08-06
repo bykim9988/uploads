@@ -88,12 +88,12 @@ public-mcp-langgraph/
 └─ public_mcp_langgraph_step_by_step.ipynb
 ```
 
-패키지를 설치한다. LLM은 클라우드 `ChatAnthropic`을 기본으로 사용한다.
+패키지를 설치한다. LLM은 `init_chat_model()`로 만들며, 기본은 클라우드 Claude를 사용한다.
 
 ```bash
 uv init public-mcp-langgraph
 cd public-mcp-langgraph
-uv add langgraph langchain-mcp-adapters langchain-anthropic langchain-core python-dotenv ipykernel
+uv add langgraph langchain langchain-mcp-adapters langchain-anthropic langchain-google-genai langchain-openai langchain-core python-dotenv ipykernel
 uv run python -m ipykernel install --user --name public-mcp-langgraph --display-name "Python 3 (public-mcp-langgraph)"
 ```
 
@@ -101,6 +101,7 @@ uv run python -m ipykernel install --user --name public-mcp-langgraph --display-
 
 ```dotenv
 ANTHROPIC_API_KEY=sk-ant-...
+# 다른 모델을 쓸 때만 해당 키 추가:  GOOGLE_API_KEY=...  /  OPENAI_API_KEY=...
 ```
 
 > **최소 성공 경로 (Node.js 불필요)**: 본교재의 `server.py`·`agent_client.py`는 모두
@@ -148,7 +149,7 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_anthropic import ChatAnthropic
+from langchain.chat_models import init_chat_model
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph import MessagesState, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -381,24 +382,23 @@ client = MultiServerMCPClient(
 tools = await client.get_tools()
 ```
 
-클라우드 LLM(`ChatAnthropic`)에 Tool 전체를 바인딩한다. (`.env`의 `ANTHROPIC_API_KEY` 사용 — §5에서 설치 완료)
+클라우드 LLM(`init_chat_model`)에 Tool 전체를 바인딩한다. (`.env`의 `ANTHROPIC_API_KEY` 사용 — §5에서 설치 완료)
 
 ```python
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
+from langchain.chat_models import init_chat_model
 
 load_dotenv()  # .env의 ANTHROPIC_API_KEY를 읽는다
 
-model = ChatAnthropic(
-    model="claude-sonnet-4-6",   # 6주차와 동일한 모델로 통일
-    temperature=0,
-    max_tokens=1024,
-)
+MODEL = "anthropic:claude-sonnet-4-6"  # 모델 선택은 6주차 1일차 A-1 박스 참고
+
+model = init_chat_model(MODEL, temperature=0, max_tokens=1024)
 model_with_tools = model.bind_tools(tools)
 ```
 
-> **모델 통일**: 6주차 실습이 쓰던 `claude-sonnet-4-6`을 7주차에서도 그대로 사용한다. 이 모델은
-> `temperature=0`을 받으므로 6주차 코드와 설정이 일치한다.
+> **모델 통일**: 6주차 실습과 동일하게 `MODEL = "anthropic:claude-sonnet-4-6"`을 기본으로 쓴다.
+> `MODEL` 문자열만 바꾸면 다른 모델로 전환된다 — 예: `"google_genai:gemini-3-flash"`(`GOOGLE_API_KEY` 필요),
+> `"openai:gpt-4.1-mini"`(`OPENAI_API_KEY` 필요). 자세한 전환 방법은 6주차 1일차 A-1 박스 참고.
 >
 > **주의(최신 모델로 바꿀 때)**: `claude-opus-5`·`claude-sonnet-5` 같은 최신 모델은 `temperature`를
 > 넘기면 400 오류가 난다. 이 모델들로 교체한다면 `temperature=0` 줄을 삭제한다.
@@ -634,7 +634,7 @@ agent → weather_* Tool → agent → time_* Tool → agent → 최종 답변
 
 ### (선택) Ollama 연결 실패
 
-로컬 Ollama를 쓰는 경우에만 해당한다(기본 경로는 클라우드 `ChatAnthropic`).
+로컬 Ollama를 쓰는 경우에만 해당한다(기본 경로는 클라우드 LLM(`init_chat_model`)).
 
 ```bash
 ollama list
