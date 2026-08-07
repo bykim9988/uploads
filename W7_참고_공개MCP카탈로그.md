@@ -22,7 +22,7 @@
 > **핵심**: 공개 서버를 연결한 뒤에는 서버별 Tool 이름을 미리 외우기보다
 > `list_tools()`로 실제 제공 목록과 입력 스키마를 확인한 다음 `call_tool()`로 호출한다.
 
-## 2. API Key를 발급받지 않아도 되는 바로 사용할 수 있는 MCP 서버 요약
+## 2. 공개된 MCP 서버 요약
 - 여기에 정리한 MCP 중에서는 사용자 PC에 Node.js가 설치되어 있어야 동작하는 MCP 서버도 있다.
 - 실습 스크립트(`public_mcp_langgraph.py`)에는 **Node.js도 인증키도 필요 없는 8개**만 등록되어 있다(아래 ⭐ 표시).
 
@@ -51,9 +51,12 @@
 > 확인한 서버다. Fetch·Time은 최신 `mcp` SDK와 어긋나므로 `--with "mcp<1.20"`, YouTube Transcript는
 > `--with "mcp<2"` 핀을 반드시 붙인다.
 
-## 3. API Key 혹은 OAuth를 필요로 하는 서버
+## 3. 검증하지 못한 서버
 
-| 제외 서버 | 제외 이유 |
+아래 서버들은 인증키나 OAuth 계정이 있어야 연결 자체가 되기 때문에, 이번 실습 환경에서는
+연결·동작을 확인하지 못했다.
+
+| 서버 | 검증하지 못한 이유 |
 |---|---|
 | Alpha Vantage MCP | `ALPHA_VANTAGE_API_KEY` 필요 |
 | Firecrawl MCP | `FIRECRAWL_API_KEY` 필요 |
@@ -62,11 +65,11 @@
 | Brave Search MCP | `BRAVE_API_KEY` 필요 |
 
 이 서버들이 기능적으로 나쁘다는 의미가 아니다. 이번 실습의 제약조건을 “MCP 서버 인증키 없음”으로
-설정했기 때문에 제외한 것이다. **키 없는 웹 검색이 필요하면 DuckDuckGo MCP(§2 표)를 사용한다.**
+설정했기 때문에 확인하지 않은 것이다. **키 없는 웹 검색이 필요하면 DuckDuckGo MCP(§2 표)를 사용한다.**
 
 Node.js(`npx`)가 필요한 Weather·Yahoo Finance·Filesystem·Memory·Playwright·Sequential Thinking도
-같은 이유(실행 환경 제약)로 실습 스크립트에서는 제외했다. Node.js가 설치되어 있다면 §2 표의
-연결 방법을 그대로 `CONNECTIONS`에 추가하면 된다.
+같은 이유(실행 환경 제약)로 실습 스크립트에는 등록하지 않았다. Node.js가 설치되어 있다면 §2 표의
+연결 방법을 그대로 `CONNECTIONS`에 추가하면 된다(§5 참고).
 
 ## 4. 실습 방식 — `public_mcp_langgraph.py`
 
@@ -84,7 +87,7 @@ flowchart TB
 섹션 추출 등 여러 Tool을 공개한다. 따라서 정확한 표현은 **“`CONNECTIONS` 항목 하나 = MCP 서버
 하나 = Tool 묶음 하나”**이다.
 
-## 5. 실습 파일과 설치
+## 5. 실습
 
 실습 파일은 다음 하나다. 노트북을 셀 단위로 실행하지 않고, 하나의 스크립트를 옵션으로 실행한다.
 
@@ -114,6 +117,22 @@ GOOGLE_API_KEY=...
 # 다른 모델을 쓸 때만 해당 키 추가:  ANTHROPIC_API_KEY=sk-ant-...  /  OPENAI_API_KEY=...
 ```
 
+호출 모델에 따라 MCP를 호출하는 횟수와 활용 성능이 달라집니다.
+
+**sonnet-4-6과 비교** (Node.js 서버까지 포함해 14개 대표 질문을 돌린 결과)
+
+| 항목 | sonnet-4-6 | gemini-3.5-flash-lite |
+|---|---|---|
+| 통과 | 14/14 | 14/14 |
+| 총 호출 | 41회 | 25회 |
+| arxiv | 7회 (검색→초록→다운로드) | 1회 (검색만) |
+| ddg | 5회 | 2회 |
+| playwright | 7회 (정공법) | 5회 (JS 우회) |
+| seq | 8회 | 4회 |
+
+flash-lite가 호출 수가 확연히 적습니다. 답변은 다 나왔지만 arxiv처럼 “검색 → 초록 확인 → 본문”으로
+파고들어야 정확해지는 작업은 sonnet이 더 깊게 갑니다.
+
 ### 실행 방법
 
 ```bash
@@ -141,24 +160,58 @@ uv run python public_mcp_langgraph.py --servers all --demo --preview 0 --verbose
 > 원격 HTTP라서 Node.js가 전혀 필요 없다. 스크립트로 실행하므로 노트북에서 필요했던 이벤트 루프·
 > stderr 우회 패치도 필요 없다.
 
-### npx가 부담되면 — npx 없이 하는 3가지 방법
+### `uvx`와 `npx` — MCP 서버를 실행하는 두 가지 방식
 
-npx는 설치보다 **설치 후 PATH·커널 문제**로 막히는 경우가 많다. npx를 피하려면 아래 순서로 택한다.
+MCP 서버는 대부분 Python 아니면 JavaScript로 만들어져 있다. 그래서 서버를 켜 주는 실행기도
+두 가지다.
 
-1. **(가장 안정) 내가 만든 FastMCP 서버를 쓴다.** 본교재 세션 2의 `server.py`에 파이썬 함수를
-   `@mcp.tool`로 더 붙이고, 세션 3의 `agent_client.py`가 그 툴을 골라 쓰게 한다. **Node·npx·uvx 모두 불필요**하고 버전
-   충돌도 없다.
-2. **(가벼움) `uvx` 파이썬 공개 서버.** `Fetch`·`Time`처럼 `uvx mcp-server-*`로 실행하면 npx가
-   필요 없다. 다만 공개 reference 서버는 설치되는 `mcp` SDK 버전과 어긋나 `ImportError`가 날 수 있다
-   (아래 주의 참고).
-3. **(가장 간단) 원격 호스팅 MCP.** URL만 연결하면 로컬 프로세스·npx가 아예 없다. **키조차 필요
-   없는 무인증 서버도 있다** — 예: DeepWiki `https://mcp.deepwiki.com/mcp`, Context7
-   `https://mcp.context7.com/mcp`.
+| 실행기 | 실행하는 서버 | 필요한 것 | 이 실습에서 |
+|---|---|---|---|
+| `uvx` | Python으로 만든 MCP 서버 | `uv`(이미 설치되어 있음) | Fetch, Time, arXiv, YouTube, DuckDuckGo, Wikipedia |
+| `npx` | JavaScript로 만든 MCP 서버 | Node.js 별도 설치 | (사용 안 함) |
 
-> **주의 — 공개 reference 서버의 버전 취약성**: `uvx mcp-server-fetch`류가
-> `ImportError: cannot import name 'McpError' ...`처럼 실패하면 이는 Node 문제가 아니라 서버 코드와
-> 설치된 `mcp` 버전이 어긋난 것이다. 그래서 이 스크립트는 Fetch·Time에 `--with "mcp<1.20"`,
-> YouTube Transcript에 `--with "mcp<2"` 핀을 붙여 두었다 (2026-08 검증).
+여기에 **원격 서버**가 하나 더 있다. DeepWiki·Context7처럼 이미 남이 켜 둔 서버는 URL만 적으면
+되므로 내 PC에서 아무것도 실행하지 않는다. 설치도 실행기도 필요 없어 가장 간단하다.
+
+**이 실습에 등록된 8개 서버는 `uvx` 6개 + 원격 2개**라서 Node.js 없이 끝까지 진행할 수 있다.
+§2 표에서 연결 방법이 `npx`로 시작하는 서버(Weather, Yahoo Finance, Filesystem, Memory,
+Playwright, Sequential Thinking)를 추가로 써 보고 싶을 때만 아래 설치가 필요하다.
+
+### (선택) Node.js 설치 — `npx` 서버를 쓰고 싶을 때만
+
+1. **설치한다.**
+   - Windows: `winget install OpenJS.NodeJS.LTS` — 또는 https://nodejs.org 에서 **LTS** 버전을 내려받아 설치
+   - macOS: `brew install node`
+   - Linux: `nvm install 20` (`nvm`을 쓰면 권한 문제가 거의 없다)
+2. **터미널(또는 VS Code)을 완전히 닫았다가 다시 연다.** 설치 직후 `npx`를 못 찾는 오류가 가장 흔한데,
+   대부분 창을 새로 열지 않아 설치 경로가 반영되지 않은 것이다.
+3. **확인한다.** `node --version`이 `v18` 이상, `npx --version`이 정상 출력되면 된다.
+4. Playwright MCP까지 쓰려면 브라우저를 한 번 받아 둔다: `npx playwright install chromium`
+
+설치가 끝나면 §2 표의 `npx ...` 명령을 `CONNECTIONS`에 그대로 옮기면 된다. 예를 들어 Weather MCP는
+이렇게 추가한다.
+
+```python
+CONNECTIONS["weather"] = {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@dangahagan/weather-mcp@latest"],
+}
+```
+
+> Windows에서 위 설정이 “파일을 찾을 수 없음”으로 실패하면 `"command": "cmd"`,
+> `"args": ["/c", "npx", "-y", "@dangahagan/weather-mcp@latest"]`로 바꾼다.
+
+### 버전 핀(`--with "mcp<1.20"`)이 붙어 있는 이유
+
+공개 MCP 서버는 실행할 때 MCP 표준 라이브러리(`mcp`)를 자동으로 함께 내려받는다. 그런데 서버 코드가
+예전 버전을 기준으로 쓰여 있으면 새로 받은 최신 라이브러리와 맞지 않아, 켜지자마자
+`ImportError: cannot import name 'McpError' ...` 같은 오류를 내고 죽는다. 서버 잘못도 내 PC 잘못도
+아니고 **버전이 어긋난 것**이다.
+
+이때 “이 서버는 1.20보다 낮은 버전을 같이 쓰라”고 못 박아 주는 것이 `--with "mcp<1.20"`이다.
+스크립트에는 Fetch·Time에 `mcp<1.20`, YouTube Transcript에 `mcp<2`가 이미 걸려 있으므로
+그대로 실행하면 된다(2026-08 검증). 다른 서버에서 같은 오류가 나면 같은 방식으로 붙이면 된다.
 
 ## 6. `public_mcp_langgraph.py` 핵심 코드
 
@@ -302,7 +355,7 @@ def build_model(tools: list[Any]):
 > 위 `MODELS_WITHOUT_TEMPERATURE` 목록이 그 처리를 자동으로 한다. 새 모델을 쓸 때 400이 나면
 > 이 목록에 이름 조각을 추가한다.
 
-## 7. 하나의 LangGraph 완성
+### 하나의 LangGraph 완성
 
 System Prompt에는 서버 이름보다 **기능별 Tool 선택 기준**을 작성한다. 등록된 8개 서버에 맞춰
 항목도 8줄이다.
@@ -417,7 +470,7 @@ async def run_agent(graph, query: str, preview: int = 600, verbose: bool = True)
 - `shorten(text, limit)` — `limit` 초과분을 자르고 남은 글자 수를 알려준다. `limit<=0`이면 전문 출력(`--preview 0`).
 - `looks_empty(text)` — `""` 뿐 아니라 `[]`, `{}`, `null` 같은 “내용 없는 결과”도 실패로 잡는다.
 
-## 8. `--test-all` — 서버별 대표 질문 자동 실행
+## 7. `--test-all` — 서버별 대표 질문 자동 실행
 
 서버 하나당 대표 질문 하나를 표로 두고, `--test-all`이 이 표를 순회한다.
 
@@ -509,7 +562,7 @@ async def test_all_servers(server_names: list[str], preview: int = 600) -> int:
 ------------------------------------------------------------------------------
 ```
 
-## 9. Tool 선택 평가표
+## 8. Tool 선택 평가표
 
 `--test-all` 결과를 보고 채운다.
 
@@ -526,7 +579,7 @@ async def test_all_servers(server_names: list[str], preview: int = 600) -> int:
 | 백과 + 시각 | Wikipedia+Time | | | |
 | 검색 + 본문 읽기 | DuckDuckGo+Fetch | | | |
 
-## 10. 자주 발생하는 오류
+## 9. 자주 발생하는 오류
 
 ### `uvx`를 찾을 수 없음
 
@@ -535,7 +588,7 @@ async def test_all_servers(server_names: list[str], preview: int = 600) -> int:
 
 ### 공개 서버가 `ImportError`로 죽음 (`FAIL`)
 
-- 서버 패키지와 설치된 `mcp` SDK 버전이 어긋난 것이다(§5 주의).
+- 서버 패키지와 설치된 `mcp` SDK 버전이 어긋난 것이다(§5 “버전 핀” 참고).
 - 이 스크립트는 Fetch·Time에 `--with "mcp<1.20"`, YouTube Transcript에 `--with "mcp<2"` 핀을
   이미 걸어 두었다. 다른 서버가 같은 증상을 보이면 `CONNECTIONS`의 `args` 앞에 동일하게 핀을 추가한다.
 - 해결되지 않으면 그 서버만 빼고 진행한다 — `--test-all fetch time wikipedia`처럼 이름을 나열하면 된다.
@@ -581,7 +634,7 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 ```
 
-## 11. 실습 산출물
+## 10. 실습 산출물
 
 - [ ] `public_mcp_langgraph.py`
 - [ ] `--list-tools all` 실행 결과 (8개 서버 연결 로그, 전체 Tool 목록)
@@ -589,7 +642,7 @@ for _stream in (sys.stdout, sys.stderr):
 - [ ] `--servers all --demo` 로 실행한 복합 질문(Wikipedia+Time, DuckDuckGo+Fetch) 실행 경로
 - [ ] Tool 선택 평가표
 
-## 12. 공식 자료
+## 11. 공식 자료
 
 - MCP reference servers: https://github.com/modelcontextprotocol/servers
 - Fetch MCP: https://github.com/modelcontextprotocol/servers/tree/main/src/fetch
