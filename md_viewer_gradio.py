@@ -4,12 +4,11 @@
 파일을 새로 저장했다면 [목록 새로고침]을 누르면 바로 반영된다.
 
 사용 예:
-    uv run python md_viewer_gradio.py                    # 현재 폴더, http://127.0.0.1:8080
+    uv run python md_viewer_gradio.py                    # 현재 폴더, 8080 포트 + 공유 링크
     uv run python md_viewer_gradio.py --dir ./docs       # 다른 폴더를 읽기
     uv run python md_viewer_gradio.py --port 7860        # 포트 변경
-    uv run python md_viewer_gradio.py --share            # 72시간 외부 공유 링크 생성
-    uv run python md_viewer_gradio.py --auth admin:secret123   # 로그인 걸기
-    uv run python md_viewer_gradio.py --no-recursive      # 하위 폴더는 제외
+    uv run python md_viewer_gradio.py --no-share         # 내 PC에서만 (공유 링크 없음)
+    uv run python md_viewer_gradio.py --no-recursive     # 하위 폴더는 제외
 
 설치:
     uv add gradio
@@ -17,7 +16,10 @@
 참고:
     - 표·코드블록·수식은 그대로 렌더링되지만 ```mermaid 다이어그램은 코드 블록으로 보인다.
       (Gradio 기본 마크다운에 mermaid 렌더러가 없다.)
-    - --share 로 만든 주소는 내 PC로 들어오는 통로다. 시연이 끝나면 Ctrl+C 로 닫는다.
+    - 왼쪽 파일 목록은 사이드바 화살표로 접었다 펼 수 있고, 오른쪽 모서리를 끌면 폭이 조절된다.
+    - share=True 가 기본이라 실행할 때마다 공개 주소(*.gradio.live)가 만들어진다.
+      링크를 아는 사람은 누구나 이 폴더의 마크다운을 볼 수 있으니, 혼자 볼 때는 --no-share 를 쓴다.
+      시연이 끝나면 Ctrl+C 로 닫는다.
 """
 
 from __future__ import annotations
@@ -128,34 +130,53 @@ def on_select(name: str):
 # ---------------------------------------------------------------------------
 
 
+# 사이드바를 화면 왼쪽 끝에 붙이고, 오른쪽 모서리를 끌어 폭을 조절할 수 있게 한다.
+# (열림/닫힘은 gr.Sidebar가 제공하는 화살표 버튼으로 한다.)
+CSS = """
+#file-sidebar {
+    padding: 8px 10px 8px 8px;
+    resize: horizontal;          /* 오른쪽 모서리를 드래그해 폭 조절 */
+    overflow: auto;
+    min-width: 180px;
+    max-width: 70vw;
+}
+#file-sidebar .form { border: none; background: transparent; }
+#file-list label { padding: 3px 6px; }   /* 파일이 많아도 한눈에 들어오게 */
+"""
+
+# Gradio 6.0부터 css 인자가 Blocks() 에서 launch() 로 옮겨졌다. 두 버전 모두에서 돌아가게 한다.
+_MAJOR = int(gr.__version__.split(".")[0])
+BLOCKS_KW: dict = {} if _MAJOR >= 6 else {"css": CSS}
+LAUNCH_KW: dict = {"css": CSS} if _MAJOR >= 6 else {}
+
+
 def build_ui() -> gr.Blocks:
     files = find_markdown_files()
     first = files[0] if files else None
     body, raw, info = read_markdown(first) if first else ("> 표시할 마크다운 파일이 없습니다.", "", "")
 
-    with gr.Blocks(title="마크다운 뷰어", fill_height=True) as demo:
+    with gr.Blocks(title="마크다운 뷰어", fill_height=True, **BLOCKS_KW) as demo:
+        # ---- 왼쪽 사이드바: 파일 선택 (접기/펴기 + 폭 조절) ----
+        with gr.Sidebar(open=True, width=320, position="left", elem_id="file-sidebar"):
+            gr.Markdown("### 파일")
+            search = gr.Textbox(
+                label="검색", placeholder="파일명 또는 본문 내용", container=True
+            )
+            file_list = gr.Radio(
+                choices=files, value=first, label=None, container=False,
+                interactive=True, elem_id="file-list",
+            )
+            refresh = gr.Button("목록 새로고침", variant="secondary", size="sm")
+            status = gr.Markdown(f"{len(files)}개 파일")
+
+        # ---- 본문 ----
         gr.Markdown(f"## 마크다운 뷰어\n기준 폴더: `{BASE_DIR}`")
-
-        with gr.Row():
-            # ---- 왼쪽: 파일 목록 ----
-            with gr.Column(scale=1, min_width=260):
-                search = gr.Textbox(
-                    label="검색", placeholder="파일명 또는 본문 내용", scale=1
-                )
-                file_list = gr.Radio(
-                    choices=files, value=first, label="파일", interactive=True
-                )
-                refresh = gr.Button("목록 새로고침", variant="secondary")
-                status = gr.Markdown(f"{len(files)}개 파일")
-
-            # ---- 오른쪽: 내용 ----
-            with gr.Column(scale=3):
-                file_info = gr.Markdown(info)
-                with gr.Tabs():
-                    with gr.Tab("보기"):
-                        rendered = gr.Markdown(body)
-                    with gr.Tab("원본"):
-                        source = gr.Code(raw, language="markdown", lines=30)
+        file_info = gr.Markdown(info)
+        with gr.Tabs():
+            with gr.Tab("보기"):
+                rendered = gr.Markdown(body)
+            with gr.Tab("원본"):
+                source = gr.Code(raw, language="markdown", lines=30)
 
         # 파일을 고르면 본문을 갱신한다.
         file_list.change(on_select, inputs=file_list, outputs=[rendered, source, file_info])
@@ -175,8 +196,7 @@ def main() -> None:
     parser.add_argument("--dir", default=".", help="읽을 폴더 (기본: 현재 폴더)")
     parser.add_argument("--port", type=int, default=8080, help="포트 (기본: 8080)")
     parser.add_argument("--host", default="0.0.0.0", help="바인딩 주소 (기본: 0.0.0.0)")
-    parser.add_argument("--share", action="store_true", help="72시간 외부 공유 링크 생성")
-    parser.add_argument("--auth", metavar="ID:PW", help="로그인 인증 추가 (예: admin:secret123)")
+    parser.add_argument("--no-share", action="store_true", help="외부 공유 링크를 만들지 않는다")
     parser.add_argument("--no-recursive", action="store_true", help="하위 폴더는 검색하지 않는다")
     parser.add_argument("--no-browser", action="store_true", help="브라우저를 자동으로 열지 않는다")
     args = parser.parse_args()
@@ -187,23 +207,16 @@ def main() -> None:
     if not BASE_DIR.is_dir():
         raise SystemExit(f"폴더가 아닙니다: {BASE_DIR}")
 
-    auth = None
-    if args.auth:
-        if ":" not in args.auth:
-            raise SystemExit("--auth 형식은 ID:PW 입니다. 예: --auth admin:secret123")
-        user, _, password = args.auth.partition(":")
-        auth = (user, password)
-
     print(f"기준 폴더: {BASE_DIR}")
     print(f"마크다운 {len(find_markdown_files())}개 발견")
 
     build_ui().launch(
-        server_name=args.host,       # 외부 기기 접속 허용
-        server_port=args.port,       # 포트 지정
-        share=args.share,            # 72시간 제한 외부 공유 링크 생성
-        auth=auth,                   # 로그인 인증 추가
+        server_name=args.host,          # 외부 기기 접속 허용
+        server_port=args.port,          # 포트 지정
+        share=not args.no_share,        # 72시간 제한 외부 공유 링크 생성
         inbrowser=not args.no_browser,  # 브라우저 자동 열기
         allowed_paths=[str(BASE_DIR)],  # 문서 안의 로컬 이미지 접근 허용
+        **LAUNCH_KW,
     )
 
 
