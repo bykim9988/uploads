@@ -14,8 +14,9 @@
     uv add gradio
 
 참고:
-    - 표·코드블록·수식은 그대로 렌더링되지만 ```mermaid 다이어그램은 코드 블록으로 보인다.
-      (Gradio 기본 마크다운에 mermaid 렌더러가 없다.)
+    - 표·코드블록·```mermaid 다이어그램·수식($$...$$, $...$, \\(...\\), \\[...\\])을 모두 렌더링한다.
+      mermaid는 Gradio 패키지에 동봉된 것을 쓰므로 인터넷 없이도 그려진다
+      (없는 버전이면 CDN에서 받는다).
     - 왼쪽 파일 목록은 [☰ 파일 목록] 버튼이나 사이드바 화살표로 접었다 펼 수 있고,
       목록 위의 슬라이더로 폭을 조절한다.
     - share=True 가 기본이라 실행할 때마다 공개 주소(*.gradio.live)가 만들어진다.
@@ -26,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import gradio as gr
@@ -141,6 +143,99 @@ CSS = """
 #file-list label { padding: 3px 6px; }   /* 파일이 많아도 한눈에 들어오게 */
 """
 
+# 수식 구분자. Gradio 기본값은 $$...$$ 하나뿐이라 인라인 $...$ 가 그냥 글자로 나온다.
+# 넷 다 등록해 블록·인라인 수식을 모두 렌더링한다. ($$ 를 $ 보다 먼저 두어야 한다.)
+# 코드블록·<pre> 안의 $ 는 KaTeX가 원래 건드리지 않으므로 코드 예시는 안전하다.
+LATEX_DELIMITERS = [
+    {"left": "$$", "right": "$$", "display": True},
+    {"left": "\\[", "right": "\\]", "display": True},
+    {"left": "\\(", "right": "\\)", "display": False},
+    {"left": "$", "right": "$", "display": False},
+]
+
+def bundled_mermaid_url() -> str:
+    """Gradio 패키지에 함께 들어 있는 mermaid 번들의 주소. 없으면 빈 문자열."""
+    assets = Path(gr.__file__).parent / "templates" / "frontend" / "assets"
+    for pattern in ("mermaid.core-*.js", "mermaid-*.js"):
+        hits = sorted(p for p in assets.glob(pattern) if "parser" not in p.name)
+        if hits:
+            return f"assets/{hits[0].name}"
+    return ""
+
+
+# mermaid 다이어그램. Gradio는 다이어그램을 화면에 처음 그릴 때만 mermaid를 돌리고, 그나마
+# 라벨 안의 <br/> 가 섞이면 문법이 깨져 소스가 그대로 남는다. 화면이 바뀔 때마다 아직 안 그려진
+# 다이어그램을 찾아 직접 그린다(낮은 버전에서 ```mermaid 코드 블록으로 남는 경우도 함께 처리).
+MERMAID_JS = """
+() => {
+    const LOCAL = __MERMAID_LOCAL__;   // Gradio에 동봉된 mermaid (인터넷 불필요)
+    const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    let queued = false;
+    let failures = 0;          // mermaid를 계속 못 받아오면 그만 시도한다(오프라인 등).
+
+    // mermaid 라이브러리 확보. 동봉본을 먼저 쓰고, 없을 때만 CDN에서 받는다.
+    const loadMermaid = async () => {
+        if (window.__mdViewerMermaid) return window.__mdViewerMermaid;
+        const sources = LOCAL ? [new URL(LOCAL, document.baseURI).href, CDN] : [CDN];
+        for (const src of sources) {
+            try {
+                const mod = await import(src);
+                const lib = mod.default || mod;
+                lib.initialize({ startOnLoad: false, securityLevel: 'antiscript' });
+                window.__mdViewerMermaid = lib;
+                return lib;
+            } catch (err) {
+                console.warn('mermaid 로드 실패:', src, err);
+            }
+        }
+        return null;
+    };
+
+    // Gradio는 다이어그램 안의 <br/> 를 '진짜 줄바꿈 태그'로 바꿔 버린다. 그러면 따옴표로 묶인
+    // 라벨 중간에 줄바꿈이 들어가 mermaid 문법이 깨진다. 원래 글자로 되돌린다.
+    const sourceOf = (el) => {
+        const html = el.innerHTML.replace(/<br\\s*\\/?>/gi, '&lt;br/&gt;');
+        const decoder = document.createElement('textarea');
+        decoder.innerHTML = html;
+        return decoder.value;
+    };
+
+    const render = async () => {
+        queued = false;
+        if (failures > 5) return;
+
+        // 낮은 Gradio 버전은 ```mermaid 를 코드 블록으로 남긴다. 먼저 컨테이너로 바꾼다.
+        document.querySelectorAll('pre code.language-mermaid').forEach((code) => {
+            const box = document.createElement('div');
+            box.className = 'mermaid';
+            box.textContent = code.textContent;
+            code.closest('pre').replaceWith(box);
+        });
+
+        const pending = [...document.querySelectorAll('.mermaid:not([data-processed])')];
+        if (!pending.length) return;                 // 이미 다 그려졌다.
+
+        const mermaid = await loadMermaid();
+        if (!mermaid) { failures += 1; return; }
+
+        pending.forEach((el) => { el.textContent = sourceOf(el); });
+        try {
+            await mermaid.run({ nodes: pending, suppressErrors: true });
+        } catch (err) {
+            console.warn('mermaid 렌더링 실패:', err);
+        }
+    };
+
+    const schedule = () => {
+        if (queued) return;
+        queued = true;
+        setTimeout(render, 150);
+    };
+    new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+    schedule();
+}
+"""
+
 # Gradio 6.0부터 css 인자가 Blocks() 에서 launch() 로 옮겨졌다. 두 버전 모두에서 돌아가게 한다.
 _MAJOR = int(gr.__version__.split(".")[0])
 BLOCKS_KW: dict = {} if _MAJOR >= 6 else {"css": CSS}
@@ -179,7 +274,7 @@ def build_ui() -> gr.Blocks:
         file_info = gr.Markdown(info)
         with gr.Tabs():
             with gr.Tab("보기"):
-                rendered = gr.Markdown(body)
+                rendered = gr.Markdown(body, latex_delimiters=LATEX_DELIMITERS)
             with gr.Tab("원본"):
                 source = gr.Code(raw, language="markdown", lines=30)
 
@@ -221,6 +316,12 @@ def build_ui() -> gr.Blocks:
                 };
                 apply(); setTimeout(apply, 150); setTimeout(apply, 400);
             }""",
+        )
+
+        # mermaid 감시 시작 (화면이 처음 뜰 때 한 번만 걸어 두면 이후 문서 전환은 알아서 따라온다).
+        demo.load(
+            fn=None,
+            js=MERMAID_JS.replace("__MERMAID_LOCAL__", json.dumps(bundled_mermaid_url())),
         )
 
     return demo
