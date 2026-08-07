@@ -16,7 +16,8 @@
 참고:
     - 표·코드블록·수식은 그대로 렌더링되지만 ```mermaid 다이어그램은 코드 블록으로 보인다.
       (Gradio 기본 마크다운에 mermaid 렌더러가 없다.)
-    - 왼쪽 파일 목록은 사이드바 화살표로 접었다 펼 수 있고, 오른쪽 모서리를 끌면 폭이 조절된다.
+    - 왼쪽 파일 목록은 [☰ 파일 목록] 버튼이나 사이드바 화살표로 접었다 펼 수 있고,
+      목록 위의 슬라이더로 폭을 조절한다.
     - share=True 가 기본이라 실행할 때마다 공개 주소(*.gradio.live)가 만들어진다.
       링크를 아는 사람은 누구나 이 폴더의 마크다운을 볼 수 있으니, 혼자 볼 때는 --no-share 를 쓴다.
       시연이 끝나면 Ctrl+C 로 닫는다.
@@ -130,16 +131,12 @@ def on_select(name: str):
 # ---------------------------------------------------------------------------
 
 
-# 사이드바를 화면 왼쪽 끝에 붙이고, 오른쪽 모서리를 끌어 폭을 조절할 수 있게 한다.
-# (열림/닫힘은 gr.Sidebar가 제공하는 화살표 버튼으로 한다.)
+# 사이드바 여백만 손본다.
+# 주의: #file-sidebar 에 overflow/resize 를 주면 안 된다. 사이드바를 여닫는 화살표 버튼은
+# 사이드바 상자 '바깥'(left:100%)에 붙어 있어서, overflow 를 주는 순간 잘려 사라진다.
+# 그러면 한 번 닫은 목록을 다시 열 수 없다. 폭 조절은 아래 슬라이더로 한다.
 CSS = """
-#file-sidebar {
-    padding: 8px 10px 8px 8px;
-    resize: horizontal;          /* 오른쪽 모서리를 드래그해 폭 조절 */
-    overflow: auto;
-    min-width: 180px;
-    max-width: 70vw;
-}
+#file-sidebar { padding: 8px 10px 8px 8px; }
 #file-sidebar .form { border: none; background: transparent; }
 #file-list label { padding: 3px 6px; }   /* 파일이 많아도 한눈에 들어오게 */
 """
@@ -156,9 +153,14 @@ def build_ui() -> gr.Blocks:
     body, raw, info = read_markdown(first) if first else ("> 표시할 마크다운 파일이 없습니다.", "", "")
 
     with gr.Blocks(title="마크다운 뷰어", fill_height=True, **BLOCKS_KW) as demo:
+        sidebar_open = gr.State(True)
+
         # ---- 왼쪽 사이드바: 파일 선택 (접기/펴기 + 폭 조절) ----
-        with gr.Sidebar(open=True, width=320, position="left", elem_id="file-sidebar"):
+        with gr.Sidebar(open=True, width=320, position="left", elem_id="file-sidebar") as sidebar:
             gr.Markdown("### 파일")
+            width_slider = gr.Slider(
+                200, 640, value=320, step=20, label="목록 폭(px)", container=True
+            )
             search = gr.Textbox(
                 label="검색", placeholder="파일명 또는 본문 내용", container=True
             )
@@ -170,7 +172,10 @@ def build_ui() -> gr.Blocks:
             status = gr.Markdown(f"{len(files)}개 파일")
 
         # ---- 본문 ----
-        gr.Markdown(f"## 마크다운 뷰어\n기준 폴더: `{BASE_DIR}`")
+        with gr.Row():
+            # 사이드바를 닫아도 이 버튼은 항상 보이므로 언제든 다시 열 수 있다.
+            toggle = gr.Button("☰ 파일 목록", size="sm", scale=0, min_width=130)
+            gr.Markdown(f"### 마크다운 뷰어  ·  `{BASE_DIR}`")
         file_info = gr.Markdown(info)
         with gr.Tabs():
             with gr.Tab("보기"):
@@ -187,6 +192,36 @@ def build_ui() -> gr.Blocks:
                 inputs=[search, file_list],
                 outputs=[file_list, rendered, source, file_info, status],
             )
+
+        # 목록 열기/닫기 — 버튼과 사이드바 화살표 중 어느 쪽을 눌러도 상태가 어긋나지 않게 한다.
+        toggle.click(
+            lambda is_open: (gr.update(open=not is_open), not is_open),
+            inputs=sidebar_open,
+            outputs=[sidebar, sidebar_open],
+        )
+        sidebar.expand(lambda: True, outputs=sidebar_open)
+        sidebar.collapse(lambda: False, outputs=sidebar_open)
+        # 목록 폭 조절. 사이드바는 본문 위에 겹쳐 떠 있고, 본문을 오른쪽으로 밀어내는 여백
+        # (--overlap-amount)은 Gradio가 화면을 처음 그릴 때 한 번만 계산한다. 폭을 바꾼 뒤
+        # 그대로 두면 본문이 목록 아래로 파고들어 글자가 가려지므로 직접 다시 계산해 준다.
+        # (폭이 부드럽게 늘어나는 동안의 중간값을 잡지 않도록 잠시 뒤 두 번 더 계산한다.)
+        width_slider.change(
+            lambda width: gr.update(width=int(width)), inputs=width_slider, outputs=sidebar
+        ).then(
+            fn=None,
+            js="""() => {
+                const sidebar = document.querySelector('#file-sidebar');
+                const wrap = sidebar && sidebar.closest('.wrap');
+                if (!wrap) return;
+                const apply = () => {
+                    const width = sidebar.getBoundingClientRect().width;
+                    const left = wrap.getBoundingClientRect().left;
+                    document.documentElement.style.setProperty(
+                        '--overlap-amount', Math.max(0, width - left + 30) + 'px');
+                };
+                apply(); setTimeout(apply, 150); setTimeout(apply, 400);
+            }""",
+        )
 
     return demo
 
